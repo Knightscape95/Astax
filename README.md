@@ -10,7 +10,7 @@ A Next.js 14+ Progressive Web App (PWA) for managing finances.
 - **PWA**: next-pwa for offline support and installability
 - **Charts**: ApexCharts & react-apexcharts for data visualization
 - **Database**: Vercel Postgres
-- **WebSocket**: ws for real-time communication
+- **Realtime**: Server-Sent Events (SSE) via `/api/ws` for Vercel compatibility. External WebSocket servers are supported if hosted separately.
 
 ## Getting Started
 
@@ -130,10 +130,10 @@ See `.env.example` for all available environment variables.
    |----------|-------------|
    | `NEXTAUTH_SECRET` | Auth secret (generate with `openssl rand -base64 32`) |
    | `NEXTAUTH_URL` | Your deployed URL (e.g., `https://your-app.vercel.app`) |
-   | `AWS_VM_URL` | Your AWS VM endpoint |
-   | `AWS_VM_WS_URL` | WebSocket URL for AWS VM |
-   | `INTERNAL_API_KEY` | API key for internal communication |
-   | `ALLOWED_ORIGINS` | Comma-separated allowed CORS origins |
+  | `AWS_VM_URL` | Your AWS VM endpoint (optional) |
+  | `AWS_VM_WS_URL` | WebSocket URL for AWS VM (optional - only if you host a WS server) |
+  | `NEXT_PUBLIC_WS_TRANSPORT` | Realtime transport: `sse` (default) or `ws` |
+  | `NEXT_PUBLIC_SSE_URL` | SSE endpoint (default: `/api/ws`) |
    | `ADMIN_USERNAME` | Admin login username |
    | `ADMIN_PASSWORD` | Admin login password |
 

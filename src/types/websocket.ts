@@ -328,6 +328,7 @@ export interface WebSocketState {
 
 export interface WebSocketConfig {
   url: string;
+  transport?: 'sse' | 'ws';
   reconnect: boolean;
   reconnectInterval: number;
   reconnectMaxAttempts: number;
@@ -338,7 +339,10 @@ export interface WebSocketConfig {
 }
 
 export const DEFAULT_WS_CONFIG: WebSocketConfig = {
-  url: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001',
+  // Prefer Server-Sent Events (SSE) for Vercel compatibility. Override with
+  // NEXT_PUBLIC_WS_TRANSPORT=ws and NEXT_PUBLIC_WS_URL to use a remote WS server.
+  url: process.env.NEXT_PUBLIC_SSE_URL || '/api/ws',
+  transport: (process.env.NEXT_PUBLIC_WS_TRANSPORT as 'sse' | 'ws') || 'sse',
   reconnect: true,
   reconnectInterval: 1000,
   reconnectMaxAttempts: 10,

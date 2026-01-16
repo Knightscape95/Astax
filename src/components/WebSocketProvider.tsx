@@ -1,5 +1,9 @@
 'use client';
 
+// WebSocketProvider supports both WebSocket and Server-Sent Events (SSE).
+// For Vercel deployments SSE is the recommended default transport (configure
+// `NEXT_PUBLIC_WS_TRANSPORT` to override).
+
 import React, {
   createContext,
   useContext,

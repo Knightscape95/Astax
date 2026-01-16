@@ -1,15 +1,10 @@
 /**
- * WebSocket API Route Handler
+ * Realtime API Route (SSE)
  * 
- * Note: Next.js App Router does not natively support WebSocket connections
- * in route handlers because they use HTTP request/response cycles.
- * 
- * This route provides:
- * 1. Server-Sent Events (SSE) as an alternative for server-to-client streaming
- * 2. API endpoints for the external WebSocket server
- * 
- * For full WebSocket support, use the separate WebSocket server at:
- * src/lib/websocket-server.ts
+ * This route implements Server-Sent Events (SSE) for server-to-client streaming
+ * which is compatible with Vercel serverless functions. For full-duplex
+ * WebSocket support, host an external WebSocket server and configure
+ * `NEXT_PUBLIC_WS_TRANSPORT=ws` and `NEXT_PUBLIC_WS_URL` to point to it.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -22,26 +17,29 @@ const sseClients = new Map<string, ReadableStreamDefaultController>();
  */
 function getCorsHeaders(request: NextRequest): Record<string, string> {
   const origin = request.headers.get('origin') || '';
-  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()) || [];
+  const allowedOriginsEnv = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) || [];
   const awsVmOrigin = process.env.AWS_VM_ORIGIN || '';
-  
-  // Add AWS VM origin to allowed origins if configured
-  if (awsVmOrigin && !allowedOrigins.includes(awsVmOrigin)) {
-    allowedOrigins.push(awsVmOrigin);
+
+  // Build effective list - in development default to localhost:3000 if none provided
+  const defaultDevOrigins = ['http://localhost:3000'];
+  const effectiveOrigins = allowedOriginsEnv.length > 0
+    ? [...new Set([...allowedOriginsEnv, ...(awsVmOrigin ? [awsVmOrigin] : [])])]
+    : (process.env.NODE_ENV === 'production' ? [] : defaultDevOrigins);
+
+  const isAllowed = effectiveOrigins.includes(origin);
+
+  if (!isAllowed) {
+    // Log rejected origin for visibility; do not set wildcard
+    console.warn('[CORS] Rejected origin for SSE:', origin);
   }
 
-  // Check if origin is allowed (allow all if no origins configured)
-  const isAllowed = allowedOrigins.length === 0 || 
-    allowedOrigins.includes(origin) || 
-    allowedOrigins.includes('*');
-
-  const allowOrigin = isAllowed ? (origin || '*') : '';
+  const allowOrigin = isAllowed ? origin : '';
 
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-Api-Key, Authorization, X-Requested-With',
-    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Credentials': allowOrigin ? 'true' : 'false',
     'Access-Control-Max-Age': '86400',
   };
 }

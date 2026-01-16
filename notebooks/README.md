@@ -16,6 +16,18 @@ This directory contains the training pipeline for Traycer models.
 6. Download the `model.onnx` file from the Colab file browser.
 7. Upload the `model.onnx` file to the Traycer Dashboard.
 
+---
+
+## End-to-end checklist (for testers)
+
+- [ ] Run the notebook for each model type (LSTM, Transformer, DNN, Random Forest, XGBoost, RL)
+- [ ] Verify ONNX export (use `onnx.checker.check_model` in notebook)
+- [ ] Log experiment metadata via the `POST /api/experiments` endpoint and include `wandb_run_id` if using W&B
+- [ ] Post epoch metrics to `/api/experiments/:id/metrics` and confirm they appear in the dashboard
+- [ ] Upload the ONNX file to the dashboard and ensure the model appears in `Models` list
+- [ ] Verify checkpoint resume works by saving and loading a checkpoint after reconnect
+- [ ] Run the `pnpm e2e:experiments` script to validate the experiments API flow (see `docs/e2e.md`)
+
 ## Supported Models
 - LSTM
 - XGBoost

@@ -204,90 +204,122 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     messageQueueRef.current?.enqueue(message as IncomingMessage);
   }, [log, updateState]);
 
-  // Connect to WebSocket server
+  // Connect to server (WebSocket preferred if configured; SSE otherwise)
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      log('Already connected');
-      return;
-    }
+    // Prevent double-connect
+    if (config.transport === 'ws') {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        log('Already connected via WebSocket');
+        return;
+      }
 
-    if (wsRef.current?.readyState === WebSocket.CONNECTING) {
-      log('Connection in progress');
-      return;
+      if (wsRef.current?.readyState === WebSocket.CONNECTING) {
+        log('WebSocket connection in progress');
+        return;
+      }
+    } else {
+      if (esRef.current) {
+        log('EventSource already connected');
+        return;
+      }
     }
 
     clearTimers();
     updateState({ connectionState: 'connecting', error: null });
-    log('Connecting to', config.url);
+    log('Connecting to', config.url, 'via', config.transport || (isSSE ? 'sse' : 'ws'));
 
-    try {
-      wsRef.current = new WebSocket(config.url);
+    // Helper to connect via SSE
+    const connectSSE = () => {
+      try {
+        const url = config.url;
+        esRef.current = new EventSource(url);
 
-      wsRef.current.onopen = (event) => {
-        log('Connected');
-        updateState({
-          connectionState: 'connected',
-          reconnectAttempts: 0,
-          error: null,
-        });
-        startHeartbeat();
-        options.onOpen?.(event);
-      };
+        esRef.current.onopen = () => {
+          log('SSE connected');
+          updateState({ connectionState: 'connected', reconnectAttempts: 0, error: null });
+          options.onOpen?.(new Event('open'));
+        };
 
-      wsRef.current.onclose = (event) => {
-        log('Disconnected:', event.code, event.reason);
-        clearTimers();
-        
-        const wasConnected = state.connectionState === 'connected';
-        updateState({
-          connectionState: 'disconnected',
-          clientId: null,
-        });
-        
-        options.onClose?.(event);
+        esRef.current.onmessage = (event) => {
+          handleMessage(event as MessageEvent);
+        };
 
-        // Attempt reconnection if enabled and not a clean close
-        if (
-          config.reconnect &&
-          event.code !== 1000 &&
-          state.reconnectAttempts < config.reconnectMaxAttempts
-        ) {
-          const delay = Math.min(
-            config.reconnectInterval * Math.pow(2, state.reconnectAttempts),
-            30000 // Max 30 seconds
-          );
-          
-          log(`Reconnecting in ${delay}ms (attempt ${state.reconnectAttempts + 1})`);
-          updateState({
-            connectionState: 'reconnecting',
-            reconnectAttempts: state.reconnectAttempts + 1,
-          });
+        esRef.current.onerror = (ev) => {
+          log('SSE error', ev);
+          updateState({ connectionState: 'error', error: new Error('SSE error') });
+          options.onError?.(ev as Event);
 
-          reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
-          }, delay);
-        }
-      };
+          // EventSource auto-reconnects; if it fails repeatedly, let state reflect it
+        };
+      } catch (error) {
+        log('SSE connection failed:', error);
+        updateState({ connectionState: 'error', error: new Error('SSE connection failed') });
+      }
+    };
 
-      wsRef.current.onerror = (event) => {
-        log('Error:', event);
-        updateState({
-          connectionState: 'error',
-          error: new Error('WebSocket error'),
-        });
-        options.onError?.(event);
-      };
+    // Helper to connect via WebSocket
+    const connectWS = () => {
+      try {
+        wsRef.current = new WebSocket(config.url);
 
-      wsRef.current.onmessage = handleMessage;
-    } catch (error) {
-      log('Connection failed:', error);
-      updateState({
-        connectionState: 'error',
-        error: error instanceof Error ? error : new Error('Connection failed'),
-      });
+        wsRef.current.onopen = (event) => {
+          log('WebSocket connected');
+          updateState({ connectionState: 'connected', reconnectAttempts: 0, error: null });
+          startHeartbeat();
+          options.onOpen?.(event);
+        };
+
+        wsRef.current.onclose = (event) => {
+          log('WebSocket disconnected:', event.code, event.reason);
+          clearTimers();
+          updateState({ connectionState: 'disconnected', clientId: null });
+          options.onClose?.(event);
+
+          // On error or non-clean close, fallback to SSE
+          if (config.reconnect && event.code !== 1000 && state.reconnectAttempts < config.reconnectMaxAttempts) {
+            const delay = Math.min(config.reconnectInterval * Math.pow(2, state.reconnectAttempts), 30000);
+            log(`WebSocket reconnecting in ${delay}ms (attempt ${state.reconnectAttempts + 1})`);
+            updateState({ connectionState: 'reconnecting', reconnectAttempts: state.reconnectAttempts + 1 });
+            reconnectTimeoutRef.current = setTimeout(() => {
+              connect();
+            }, delay);
+          } else {
+            log('Falling back to SSE');
+            connectSSE();
+          }
+        };
+
+        wsRef.current.onerror = (event) => {
+          log('WebSocket error:', event);
+          updateState({ connectionState: 'error', error: new Error('WebSocket error') });
+          options.onError?.(event);
+
+          // Try fallback to SSE
+          log('Attempting SSE fallback due to WebSocket error');
+          connectSSE();
+        };
+
+        wsRef.current.onmessage = handleMessage;
+      } catch (error) {
+        log('WebSocket connection failed:', error);
+        updateState({ connectionState: 'error', error: error instanceof Error ? error : new Error('Connection failed') });
+
+        // Fallback to SSE if WS fails
+        connectSSE();
+      }
+    };
+
+    if (config.transport === 'ws') {
+      connectWS();
+    } else if (config.transport === 'sse' || isSSE) {
+      connectSSE();
+    } else {
+      // Default: try WebSocket first, then SSE
+      connectWS();
     }
   }, [
     config.url,
+    config.transport,
     config.reconnect,
     config.reconnectInterval,
     config.reconnectMaxAttempts,
@@ -299,6 +331,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     options,
     startHeartbeat,
     updateState,
+    isSSE,
   ]);
 
   // Disconnect from WebSocket server
@@ -320,19 +353,28 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   // Send a message
   const send = useCallback((message: OutgoingMessage): boolean => {
-    if (wsRef.current?.readyState !== WebSocket.OPEN) {
-      log('Cannot send - not connected');
+    // If WebSocket is available and open, use it
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(serializeMessage(message));
+        log('Sent via WebSocket:', message.type);
+        return true;
+      } catch (error) {
+        log('WebSocket send error:', error);
+        return false;
+      }
+    }
+
+    // SSE is read-only; clients cannot push messages via EventSource.
+    // If using SSE and a server-side POST endpoint is available for client actions,
+    // implement it as needed. For now, notify and return false.
+    if (esRef.current) {
+      log('Cannot send via SSE (read-only) - consider POSTing to server endpoint');
       return false;
     }
 
-    try {
-      wsRef.current.send(serializeMessage(message));
-      log('Sent:', message.type);
-      return true;
-    } catch (error) {
-      log('Send error:', error);
-      return false;
-    }
+    log('Cannot send - not connected');
+    return false;
   }, [log]);
 
   // Subscribe to channels
@@ -343,16 +385,20 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     
     if (newChannels.length === 0) return;
 
-    // Store for reconnection
+    // Store for reconnection/local state
     pendingSubscriptionsRef.current = [
       ...new Set([...pendingSubscriptionsRef.current, ...newChannels]),
     ];
 
+    // If using WebSocket, inform server. If using SSE, subscriptions are local-only
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const message = createMessage<SubscribeMessage>('subscribe', {
         channels: newChannels,
       });
       send(message);
+    } else if (esRef.current) {
+      // SSE transport is one-way; server-side broadcasting will reach all clients
+      log('Using SSE transport - subscriptions are client-side filters only');
     }
 
     updateState({
@@ -371,6 +417,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         channels,
       });
       send(message);
+    } else if (esRef.current) {
+      log('Using SSE transport - unsubscriptions are client-side only');
     }
 
     updateState({
