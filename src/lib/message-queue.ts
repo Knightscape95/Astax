@@ -376,7 +376,7 @@ export class TypedMessageQueue<T extends { type: string }> {
       const handler = this.handlers.get(type);
       if (handler) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = handler(group as any);
+        const result = handler(group as unknown[]);
         if (result instanceof Promise) {
           promises.push(result);
         }

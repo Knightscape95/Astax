@@ -49,6 +49,7 @@ export interface UseWebSocketReturn {
 
 export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketReturn {
   const config: WebSocketConfig = { ...DEFAULT_WS_CONFIG, ...options };
+  const isSSE = config.transport === 'sse';
   
   const [state, setState] = useState<WebSocketState>({
     connectionState: 'disconnected',
@@ -61,6 +62,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   });
 
   const wsRef = useRef<WebSocket | null>(null);
+  const esRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -226,7 +228,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
     clearTimers();
     updateState({ connectionState: 'connecting', error: null });
-    log('Connecting to', config.url, 'via', config.transport || (isSSE ? 'sse' : 'ws'));
+    log('Connecting to', config.url, 'via', config.transport);
 
     // Helper to connect via SSE
     const connectSSE = () => {
@@ -311,11 +313,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
     if (config.transport === 'ws') {
       connectWS();
-    } else if (config.transport === 'sse' || isSSE) {
-      connectSSE();
     } else {
-      // Default: try WebSocket first, then SSE
-      connectWS();
+      connectSSE();
     }
   }, [
     config.url,
@@ -331,7 +330,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     options,
     startHeartbeat,
     updateState,
-    isSSE,
   ]);
 
   // Disconnect from WebSocket server
@@ -342,6 +340,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     if (wsRef.current) {
       wsRef.current.close(1000, 'Client disconnect');
       wsRef.current = null;
+    }
+
+    if (esRef.current) {
+      esRef.current.close();
+      esRef.current = null;
     }
 
     updateState({

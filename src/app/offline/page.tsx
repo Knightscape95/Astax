@@ -16,11 +16,11 @@ export default function OfflinePage() {
         </div>
         
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">
-          You're Offline
+          You&apos;re Offline
         </h1>
         
         <p className="text-gray-600 dark:text-gray-300 mb-8">
-          It seems you've lost your internet connection. We're unable to load the latest data, but you can still view your cached information.
+          It seems you&apos;ve lost your internet connection. We&apos;re unable to load the latest data, but you can still view your cached information.
         </p>
         
         <div className="space-y-3">
